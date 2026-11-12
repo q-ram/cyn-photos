@@ -1,0 +1,17 @@
+{
+  "name": "청년회의 밤 사진 정리",
+  "short_name": "청년회의 밤",
+  "description": "교회(풍납동)에서 찍은 사진만 골라 날짜별로 정리합니다.",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f5f8",
+  "theme_color": "#1f2a44",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
