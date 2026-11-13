@@ -246,3 +246,5 @@ a.big-btn { text-decoration: none; color: var(--text); }
 .viewer-bottom .big-btn { margin: 0; }
 .viewer-bottom .big-btn.ghost-dark { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.5); }
 .drop-cover { position: fixed; inset: 12px; z-index: 80; border: 4px dashed var(--primary); border-radius: 20px; background: rgba(47,107,255,.12); display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: 800; color: var(--primary); pointer-events: none; }
+.update-bar { position: fixed; left: 12px; right: 12px; top: calc(env(safe-area-inset-top, 0px) + 8px); z-index: 70; display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #1b1f2a; color: #fff; border-radius: 14px; padding: 10px 12px; box-shadow: 0 4px 16px rgba(0,0,0,.3); font-size: 15px; }
+.update-bar button { border: 0; background: var(--primary); color: #fff; font-weight: 700; border-radius: 10px; padding: 8px 14px; min-height: 40px; }

@@ -1,10 +1,10 @@
 import {
   DOW_KO, extractGps, locate, classify, isPicked, parseExifDateTime, findDate,
   dateLabel, buildExportNames, makeZip, safeName, crc32,
-} from './core.js';
+} from './core.js?v=6';
 import {
   boxAll, boxPut, boxDelete, boxClear, askPersist, parseExportName, readZipEntries, entryBlob,
-} from './collection.js';
+} from './collection.js?v=6';
 
 /* ───────── 상태 ───────── */
 
@@ -1131,11 +1131,11 @@ const canShareFiles = (() => {
 
 const SPLITS = {
   one: { note: '전부 ZIP 파일 하나로 묶어요. 파일이 크면 카톡·메일로 안 갈 수 있어요.' },
-  month: { note: '한 달마다 ZIP 파일을 하나씩 만들어요. 안은 날짜 폴더로 나뉘어요. (날짜 없는 사진은 따로 하나)' },
+  month: { limit: 200e6, note: '한 달마다 ZIP 파일을 하나씩 만들어요. 안은 날짜 폴더로 나뉘어요. 한 달이 200MB를 넘으면 그 달 안에서 나눠요. (날짜 없는 사진은 따로)' },
   mail: { limit: 20e6, note: '메일 첨부 한도에 맞게 20MB씩 나눠요. 하나씩 차례로 보내 주세요.' },
   big: { limit: 200e6, note: '카톡 파일 보내기에 맞게 200MB씩 나눠요. 하나씩 차례로 보내 주세요.' },
 };
-let splitMode = 'one';
+let splitMode = store.get('cyn.split') || 'month'; // 마지막에 고른 묶는 방법을 기억
 
 function todayStr() {
   const d = new Date();
@@ -1172,9 +1172,13 @@ function makeParts(items) {
   const parts = [];
   if (splitMode === 'one') parts.push(entries);
   else if (splitMode === 'month') {
+    // 달마다 묶고, 한 달이 200MB 를 넘으면 그 달 안에서 다시 나눈다
+    const limit = SPLITS.month.limit;
+    let size = 0;
     for (const e of entries) {
       const last = parts[parts.length - 1];
-      if (last && monthKey(last[0]) === monthKey(e)) last.push(e); else parts.push([e]);
+      if (last && monthKey(last[0]) === monthKey(e) && size + e.it.size <= limit) { last.push(e); size += e.it.size; }
+      else { parts.push([e]); size = e.it.size; }
     }
   } else {
     const limit = SPLITS[splitMode].limit;
@@ -1188,20 +1192,30 @@ function makeParts(items) {
   const persons = new Set(items.map(i => i.person));
   const who = persons.size === 1 ? safeName([...persons][0]) : '모음';
   const lbl = (e) => (e.it.dt ? dateLabel(e.it.dt.date).text : '날짜 없음');
+  // 같은 달이 여러 조각이면 (1/2), (2/2) 를 붙인다
+  const monthCount = new Map(), monthSeen = new Map();
+  if (splitMode === 'month') for (const l of parts) monthCount.set(monthKey(l[0]), (monthCount.get(monthKey(l[0])) || 0) + 1);
   return parts.map((list, i) => {
     const size = list.reduce((s, e) => s + e.it.size, 0);
     const first = lbl(list[0]), last = lbl(list[list.length - 1]);
     let range = first === last ? first : `${first} ~ ${last}`;
+    let label = parts.length > 1 ? `${i + 1}/${parts.length}` : '전체';
+    let suffix = parts.length > 1 ? `_${i + 1}of${parts.length}` : '';
     if (splitMode === 'month') {
+      const mk = monthKey(list[0]);
+      const total = monthCount.get(mk);
+      const nth = (monthSeen.get(mk) || 0) + 1;
+      monthSeen.set(mk, nth);
+      const piece = total > 1 ? ` (${nth}/${total})` : '';
       const days = new Set(list.filter(e => e.it.dt).map(e => e.it.dt.date)).size;
-      range = list[0].it.dt ? `${monthText(list[0])} · ${days}일` : '날짜 없음';
+      label = (list[0].it.dt ? `${Number(mk.slice(5))}월` : '날짜 없음') + piece;
+      range = list[0].it.dt ? `${monthText(list[0])} · ${days}일` : '날짜 없는 사진';
+      suffix = `_${mk}${total > 1 ? `_${nth}of${total}` : ''}`;
     }
-    const suffix = splitMode === 'month' && parts.length > 1 ? `_${monthKey(list[0])}`
-      : parts.length > 1 ? `_${i + 1}of${parts.length}` : '';
     return {
       key: `${splitMode}|${state.boxFilter}|${i}|${list.map(e => e.it.key).join(',')}`,
       fileName: `청년회의밤_${who}_${todayStr()}${suffix}.zip`,
-      list, size, range, label: parts.length > 1 ? `${i + 1}/${parts.length}` : '전체',
+      list, size, range, label,
     };
   });
 }
@@ -1274,6 +1288,7 @@ async function sendPart(part, mode, btn) {
 }
 
 function renderParts() {
+  if (!SPLITS[splitMode]) splitMode = 'one';
   document.querySelectorAll('#splitOpts button').forEach(b => b.classList.toggle('on', b.dataset.split === splitMode));
   $('splitNote').textContent = SPLITS[splitMode].note;
   const box = $('parts');
@@ -1302,6 +1317,7 @@ $('splitOpts').addEventListener('click', (e) => {
   const b = e.target.closest('button[data-split]');
   if (!b) return;
   splitMode = b.dataset.split;
+  store.set('cyn.split', splitMode);
   setProgress('sendProgress', false);
   renderParts();
 });
@@ -1313,7 +1329,7 @@ $('sendBtn').addEventListener('click', () => {
   const who = state.boxFilter ? `${state.boxFilter}님 사진 ` : '';
   $('sendSummary').textContent = `${who}${items.length}장 · 약 ${fmtSize(total)} · 원본 화질 그대로, 날짜 폴더로 묶어요.`
     + (canShareFiles ? ' "보내기"를 누르면 카톡·메일 등을 고를 수 있어요.' : ' 이 기기는 바로 보내기가 안 돼서 "저장" 후 보내 주세요.');
-  if (splitMode === 'one' && total > SPLITS.big.limit) splitMode = 'big';
+  if (splitMode === 'one' && total > SPLITS.big.limit) splitMode = 'month'; // 너무 크면 한 파일로는 안 가서
   setProgress('sendProgress', false);
   renderParts();
   $('sendDlg').showModal();
@@ -1409,7 +1425,14 @@ boxAll().then(items => {
 }).catch(() => toast('이 브라우저에서는 모음함을 쓸 수 없어요. (사생활 보호 모드라면 꺼 주세요)'));
 
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  const hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.register('sw.js').catch(() => {});
+  // 앱이 새 버전으로 바뀌면 알려 준다 (사진을 읽는 중에 갑자기 새로고침하지 않게 직접 누르게 함)
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController) return;
+    const bar = $('updateBar');
+    if (bar) bar.hidden = false;
+  });
 }
 
 // 테스트용

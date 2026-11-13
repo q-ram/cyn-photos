@@ -1,7 +1,7 @@
 // 화면과 상관없는 계산들 (날짜·요일, 풍납동 경계 판정, 분류, 파일 이름, ZIP 만들기)
 // 브라우저와 node 테스트에서 함께 쓴다.
 
-import { PUNGNAP_AREAS } from './pungnap.js';
+import { PUNGNAP_AREAS } from './pungnap.js?v=6';
 
 export const DOW_KO = ['일', '월', '화', '수', '목', '금', '토'];
 
