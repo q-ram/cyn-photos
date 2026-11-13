@@ -1131,7 +1131,7 @@ const canShareFiles = (() => {
 
 const SPLITS = {
   one: { note: '전부 ZIP 파일 하나로 묶어요. 파일이 크면 카톡·메일로 안 갈 수 있어요.' },
-  date: { note: '날짜마다 ZIP 파일을 따로 만들어요. (날짜 없는 사진은 따로 하나)' },
+  month: { note: '한 달마다 ZIP 파일을 하나씩 만들어요. 안은 날짜 폴더로 나뉘어요. (날짜 없는 사진은 따로 하나)' },
   mail: { limit: 20e6, note: '메일 첨부 한도에 맞게 20MB씩 나눠요. 하나씩 차례로 보내 주세요.' },
   big: { limit: 200e6, note: '카톡 파일 보내기에 맞게 200MB씩 나눠요. 하나씩 차례로 보내 주세요.' },
 };
@@ -1159,14 +1159,22 @@ function exportEntries(items) {
   return out.sort((a, b) => fk(a).localeCompare(fk(b)) || sortKeyBox(a.it).localeCompare(sortKeyBox(b.it)) || a.filename.localeCompare(b.filename));
 }
 
+// 2026-03 / 날짜 없는 사진은 '날짜없음'
+const monthKey = (e) => (e.it.dt ? e.it.dt.date.slice(0, 7) : '날짜없음');
+function monthText(e) {
+  if (!e.it.dt) return '날짜 없음';
+  const [y, m] = e.it.dt.date.split('-').map(Number);
+  return `${y}년 ${m}월`;
+}
+
 function makeParts(items) {
   const entries = exportEntries(items);
   const parts = [];
   if (splitMode === 'one') parts.push(entries);
-  else if (splitMode === 'date') {
+  else if (splitMode === 'month') {
     for (const e of entries) {
       const last = parts[parts.length - 1];
-      if (last && last[0].folder === e.folder) last.push(e); else parts.push([e]);
+      if (last && monthKey(last[0]) === monthKey(e)) last.push(e); else parts.push([e]);
     }
   } else {
     const limit = SPLITS[splitMode].limit;
@@ -1183,8 +1191,13 @@ function makeParts(items) {
   return parts.map((list, i) => {
     const size = list.reduce((s, e) => s + e.it.size, 0);
     const first = lbl(list[0]), last = lbl(list[list.length - 1]);
-    const range = first === last ? first : `${first} ~ ${last}`;
-    const suffix = parts.length > 1 ? (splitMode === 'date' ? `_${list[0].folder}` : `_${i + 1}of${parts.length}`) : '';
+    let range = first === last ? first : `${first} ~ ${last}`;
+    if (splitMode === 'month') {
+      const days = new Set(list.filter(e => e.it.dt).map(e => e.it.dt.date)).size;
+      range = list[0].it.dt ? `${monthText(list[0])} · ${days}일` : '날짜 없음';
+    }
+    const suffix = splitMode === 'month' && parts.length > 1 ? `_${monthKey(list[0])}`
+      : parts.length > 1 ? `_${i + 1}of${parts.length}` : '';
     return {
       key: `${splitMode}|${state.boxFilter}|${i}|${list.map(e => e.it.key).join(',')}`,
       fileName: `청년회의밤_${who}_${todayStr()}${suffix}.zip`,

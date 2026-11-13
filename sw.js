@@ -1,5 +1,5 @@
 // 앱 파일만 저장해 둔다 (사진은 저장하지 않음). 고친 뒤에는 VERSION 을 올린다.
-const VERSION = 'cyn-v4';
+const VERSION = 'cyn-v5';
 const SHELL = [
   './', 'index.html', 'css/style.css', 'js/app.js', 'js/core.js', 'js/pungnap.js',
   'js/collection.js', 'js/vendor/exifr.full.umd.js', 'manifest.webmanifest',
