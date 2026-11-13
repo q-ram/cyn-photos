@@ -216,3 +216,33 @@ a.big-btn { text-decoration: none; color: var(--text); }
 .pd-row button.go { background: var(--primary); color: #fff; border-color: var(--primary); }
 .pd-row button.go.done { background: var(--card); color: var(--primary); }
 .mine-badge { position: absolute; right: 4px; top: 4px; }
+
+/* 불러오기 결과 */
+.desktop-only, .desktop-only-text { display: none !important; }
+@media (hover: hover) and (pointer: fine) {
+  .desktop-only { display: flex !important; }
+  .desktop-only-text { display: block !important; }
+}
+.batch-msg { margin-bottom: 10px; padding: 10px 12px; border-radius: 12px; background: var(--bg); font-size: 16px; font-weight: 700; }
+.batch-msg.ok { color: #0e7c3e; }
+.batch-msg.bad { color: #b42318; }
+.batch-msg small { display: block; font-weight: 400; color: var(--sub); font-size: 14px; }
+.stat.bad .n { color: #b42318; }
+.fail-box { margin-top: 12px; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.fail-box summary { font-weight: 700; cursor: pointer; color: #b42318; }
+.fail-box ul { margin: 8px 0 0; padding-left: 18px; font-size: 14px; color: var(--sub); max-height: 240px; overflow: auto; }
+.fail-box li b { color: var(--text); word-break: break-all; }
+
+/* 날짜 없음 묶음 · 고르기 */
+.group.nodate { --dc: #8d95a6; }
+.group-tools { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 10px; }
+.group-tools button { border: 1px solid var(--line); background: transparent; border-radius: 999px; padding: 6px 12px; min-height: 40px; font-size: 14px; }
+.group-tools button.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+.tile.sel { outline: 4px solid var(--primary); outline-offset: -4px; }
+.tile.sel::after { content: "✓"; position: absolute; left: 6px; top: 6px; width: 24px; height: 24px; border-radius: 50%; background: var(--primary); color: #fff; font-weight: 800; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+.tile .src { position: absolute; left: 0; top: 0; font-size: 10px; color: #fff; background: rgba(0,0,0,.5); padding: 1px 4px; border-bottom-right-radius: 6px; }
+#dateInput { width: 100%; min-height: 54px; font-size: 19px; padding: 8px 12px; border: 2px solid var(--line); border-radius: 12px; background: var(--bg); margin: 8px 0 4px; }
+.viewer-bottom { display: flex; flex-direction: column; gap: 8px; }
+.viewer-bottom .big-btn { margin: 0; }
+.viewer-bottom .big-btn.ghost-dark { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.5); }
+.drop-cover { position: fixed; inset: 12px; z-index: 80; border: 4px dashed var(--primary); border-radius: 20px; background: rgba(47,107,255,.12); display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: 800; color: var(--primary); pointer-events: none; }

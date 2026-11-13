@@ -35,9 +35,13 @@
     <section class="card">
       <p class="lead">교회(풍납동)에서 <b>수·토·일</b>에 찍은 사진만 골라 날짜별로 모아 줍니다.<br>사진은 내가 보내기 전까지 이 폰 밖으로 나가지 않습니다.</p>
       <label class="big-btn primary" for="pickPhotos">사진 고르기</label>
-      <input id="pickPhotos" type="file" accept="image/*,.heic,.heif" multiple hidden>
+      <input id="pickPhotos" type="file" accept="image/*" multiple hidden>
       <label class="big-btn ghost" for="pickFiles">파일에서 고르기 <small>(위치가 빠질 때)</small></label>
       <input id="pickFiles" type="file" multiple hidden>
+      <label class="big-btn ghost desktop-only" for="pickFolder">폴더째 고르기 <small>(컴퓨터)</small></label>
+      <input id="pickFolder" type="file" webkitdirectory multiple hidden>
+      <p class="small-note desktop-only-text">컴퓨터에서는 사진이나 폴더를 이 화면에 끌어다 놓아도 돼요.</p>
+      <p class="small-note">여러 번 나눠 골라도 앞에 불러온 사진에 이어서 쌓여요.</p>
       <div id="progress" class="progress" hidden>
         <div class="progress-text" id="progressText">사진 읽는 중…</div>
         <div class="bar"><div id="progressBar"></div></div>
@@ -47,7 +51,12 @@
 
     <!-- 2. 결과 요약 -->
     <section id="summary" class="card" hidden>
+      <div id="batchMsg" class="batch-msg" hidden></div>
       <div class="stats" id="stats"></div>
+      <details id="failBox" class="fail-box" hidden>
+        <summary id="failTitle">불러오지 못한 사진</summary>
+        <ul id="failList"></ul>
+      </details>
       <div id="gpsWarn" class="warn" hidden></div>
     </section>
 
@@ -126,6 +135,7 @@
       <button id="vNext" class="nav next" type="button" aria-label="다음">›</button>
     </div>
     <div class="viewer-bottom">
+      <button id="vDate" class="big-btn ghost-dark" type="button" hidden>날짜 정하기</button>
       <button id="vToggle" class="big-btn" type="button">빼기</button>
     </div>
   </div>
@@ -139,6 +149,19 @@
       <button class="big-btn primary" type="submit">확인</button>
     </form>
   </dialog>
+
+  <dialog id="dateDlg" class="sheet">
+    <form method="dialog" id="dateForm">
+      <h2>날짜 정하기</h2>
+      <p id="dateDesc"></p>
+      <input id="dateInput" type="date" required>
+      <button class="big-btn primary" type="submit" value="ok">이 날짜로 정하기</button>
+      <button id="dateClear" class="big-btn ghost" type="submit" value="clear" formnovalidate hidden>날짜 지우기 (날짜 없음으로)</button>
+      <button class="big-btn ghost" type="submit" value="cancel" formnovalidate>취소</button>
+    </form>
+  </dialog>
+
+  <div id="dropCover" class="drop-cover" hidden>여기에 놓으세요</div>
 
   <dialog id="helpDlg" class="sheet">
     <div class="sheet-body" id="helpBody"></div>

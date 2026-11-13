@@ -70,6 +70,41 @@ export function extractGps(meta) {
   return { lat, lon };
 }
 
+// 파일 이름 속 날짜 (촬영 정보가 없을 때만 쓴다)
+//  2026-03-18_수_1930_김민지_001.jpg  (이 앱이 내보낸 이름)
+//  KakaoTalk_20260318_193012345.jpg / IMG_20260318_193012.jpg / 20260318_193012.jpg
+//  Screenshot_2026-03-18-19-30-12.png / Screenshot_20260318-193012.png / PXL_20260318_103012345.jpg
+export function parseNameDateTime(filename) {
+  const base = String(filename || '').split('/').pop();
+  let m = base.match(/^(\d{4})-(\d{2})-(\d{2})_[일월화수목금토]_(\d{2})(\d{2})_/);
+  if (m) return parseExifDateTime(`${m[1]}:${m[2]}:${m[3]} ${m[4]}:${m[5]}:00`);
+  const re = /(?<!\d)(20\d{2})[-_.]?(\d{2})[-_.]?(\d{2})(?:[-_ T.]?(\d{2})[-_.:]?(\d{2})(?:[-_.:]?(\d{2}))?)?(?!\d)/g;
+  const tryParse = (y, mo, d, h, mi, se) => {
+    const days = new Date(Date.UTC(+y, +mo, 0)).getUTCDate();
+    if (+mo < 1 || +mo > 12 || +d < 1 || +d > days) return null;
+    const timeOk = h != null && +h < 24 && +mi < 60 && (se == null || +se < 60);
+    return parseExifDateTime(`${y}:${mo}:${d}${timeOk ? ` ${h}:${mi}:${se || '00'}` : ''}`);
+  };
+  // 카카오톡·픽셀처럼 초 뒤에 밀리초가 붙는 경우 (193012345)
+  m = base.match(/(?<!\d)(20\d{2})(\d{2})(\d{2})[-_](\d{2})(\d{2})(\d{2})\d{1,3}(?!\d)/);
+  if (m) { const dt = tryParse(m[1], m[2], m[3], m[4], m[5], m[6]); if (dt) return dt; }
+  for (const mm of base.matchAll(re)) {
+    const dt = tryParse(mm[1], mm[2], mm[3], mm[4], mm[5], mm[6]);
+    if (dt) return dt;
+  }
+  return null;
+}
+
+// 날짜 찾기 순서: 촬영 시각 → 생성 시각 → 파일 이름. 파일 수정 시각은 쓰지 않는다.
+// 결과: { dt, source: 'exif' | 'name' | null }
+export function findDate(meta, filename) {
+  const fromExif = pickDateTime(meta);
+  if (fromExif) return { dt: fromExif, source: 'exif' };
+  const fromName = parseNameDateTime(filename);
+  if (fromName) return { dt: fromName, source: 'name' };
+  return { dt: null, source: null };
+}
+
 export function pickDateTime(meta) {
   if (!meta) return null;
   return parseExifDateTime(meta.DateTimeOriginal)
@@ -138,8 +173,16 @@ export function isInPungnap(lat, lon, bufferM = 0) {
 
 // 각 사진을 한 칸에 넣는다.
 // 'nodate' 날짜 없음 → 'range' 기간 밖 → 'otherday' 다른 요일 → 'nogps' 위치 없음 → 'in' 풍납동 / 'out' 다른 동네
+// 날짜 없는 사진: 기간·요일은 따지지 않는다. GPS 가 풍납동 밖일 때만 '다른 동네', 아니면 '날짜 없음'(기본 포함)
+// 사용자가 직접 날짜를 정한 사진: 기간·요일·위치없음을 따지지 않고 넣는다 (풍납동 밖 GPS 만 뺀다)
 export function classify(photo, settings) {
-  if (!photo.dt) return 'nodate';
+  const outside = () => {
+    if (!photo.gps) return false;
+    const dist = photo.dist ?? locate(photo.gps.lat, photo.gps.lon).distance;
+    return dist > settings.buffer;
+  };
+  if (!photo.dt) return outside() ? 'out' : 'nodate';
+  if (photo.dtSource === 'manual') return outside() ? 'out' : 'in';
   const { date, dow } = photo.dt;
   if ((settings.from && date < settings.from) || (settings.to && date > settings.to)) return 'range';
   if (!settings.days.includes(dow)) return 'otherday';
@@ -151,7 +194,7 @@ export function classify(photo, settings) {
 // 기본으로 고른 상태인가: 풍납동 사진은 기본 포함, 나머지는 사용자가 직접 넣어야 포함
 export function isPicked(cat, override) {
   if (override === true || override === false) return override;
-  return cat === 'in';
+  return cat === 'in' || cat === 'nodate';
 }
 
 /* ───────── 파일 이름 ───────── */
@@ -179,20 +222,25 @@ export function folderName(dateStr) {
 // 날짜별로 시간 순서대로 번호를 매겨 이름을 만든다
 // photos: [{ dt, name, type, ... }] (같은 날짜든 아니든 상관없음)
 // 결과: Map(photo → { folder, filename })
+export const NODATE_FOLDER = '날짜없음';
+
+// 날짜 없는 사진: 날짜없음/날짜없음_김민지_001.jpg
 export function buildExportNames(photos, person) {
   const who = safeName(person);
   const byDate = new Map();
   for (const p of photos) {
-    if (!byDate.has(p.dt.date)) byDate.set(p.dt.date, []);
-    byDate.get(p.dt.date).push(p);
+    const d = p.dt ? p.dt.date : '';
+    if (!byDate.has(d)) byDate.set(d, []);
+    byDate.get(d).push(p);
   }
   const out = new Map();
   for (const [date, list] of byDate) {
-    list.sort((a, b) => a.dt.sortKey.localeCompare(b.dt.sortKey) || String(a.name).localeCompare(String(b.name)));
-    const folder = folderName(date);
+    list.sort((a, b) => (a.dt && b.dt ? a.dt.sortKey.localeCompare(b.dt.sortKey) : 0) || String(a.name).localeCompare(String(b.name)));
+    const folder = date ? folderName(date) : NODATE_FOLDER;
     list.forEach((p, i) => {
       const n = String(i + 1).padStart(3, '0');
-      out.set(p, { folder, filename: `${folder}_${p.dt.hhmm}_${who}_${n}.${extOf(p.name, p.type)}` });
+      const ext = extOf(p.name, p.type);
+      out.set(p, { folder, filename: date ? `${folder}_${p.dt.hhmm}_${who}_${n}.${ext}` : `${NODATE_FOLDER}_${who}_${n}.${ext}` });
     });
   }
   return out;

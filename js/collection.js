@@ -44,8 +44,12 @@ export async function askPersist() {
 /* ───────── 내보낸 파일 이름 읽기 ───────── */
 // 2026-03-18_수_1930_김민지_001.jpg → { date, hhmm, person, n, ext }
 const NAME_RE = /^(\d{4}-\d{2}-\d{2})_[일월화수목금토]_(\d{4})_(.+)_(\d{3,})\.([A-Za-z0-9]{2,5})$/;
+// 날짜없음_김민지_001.jpg → { date: null, person, n, ext }
+const NODATE_RE = /^날짜없음_(.+)_(\d{3,})\.([A-Za-z0-9]{2,5})$/;
 export function parseExportName(path) {
   const base = String(path).split('/').pop();
+  const nd = base.match(NODATE_RE);
+  if (nd) return { date: null, hhmm: null, person: nd[1], n: Number(nd[2]), ext: nd[3].toLowerCase(), base };
   const m = base.match(NAME_RE);
   if (!m) return null;
   return { date: m[1], hhmm: m[2], person: m[3], n: Number(m[4]), ext: m[5].toLowerCase(), base };
