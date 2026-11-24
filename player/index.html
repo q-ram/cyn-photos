@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>청년회의 밤 음향</title>
+  <meta name="description" content="PPT에 맞춰 내가 넣은 BGM과 효과음을 트는 음향 플레이어. 음원은 이 기기 안에만 저장됩니다.">
+  <meta name="theme-color" content="#0f1218">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="청년회의 밤 음향">
+  <link rel="stylesheet" href="player.css?v=2">
+</head>
+<body>
+  <header class="top">
+    <h1>청년회의 밤 음향</h1>
+    <div class="top-actions">
+      <button id="lockBtn" class="chip" type="button" aria-pressed="false">편집 중</button>
+      <button id="helpBtn" class="chip" type="button">도움말</button>
+    </div>
+  </header>
+
+  <!-- 지금 나오는 BGM -->
+  <section class="now" id="now">
+    <div class="now-label">지금 BGM</div>
+    <div class="now-title" id="nowTitle">재생 중인 곡 없음</div>
+    <div class="now-memo" id="nowMemo"></div>
+    <div class="bar" id="seek" title="눌러서 위치 옮기기"><div id="seekFill"></div></div>
+    <div class="times"><span id="tNow">0:00</span><span id="tLeft">-0:00</span></div>
+    <div class="controls">
+      <button id="pauseBtn" class="ctl" type="button" disabled><i>⏸</i><span>일시정지</span></button>
+      <button id="nextBtn" class="ctl primary" type="button"><i>⏭</i><span>다음 곡</span></button>
+      <button id="fadeBtn" class="ctl" type="button" disabled><i>🔉</i><span>서서히 끄기</span></button>
+      <button id="stopAllBtn" class="ctl danger" type="button"><i>⏹</i><span>모두 끄기</span></button>
+    </div>
+    <div class="next-up" id="nextUp"></div>
+    <label class="master">전체 음량
+      <input id="master" type="range" min="0" max="100" step="1">
+      <span id="masterVal">100%</span>
+    </label>
+  </section>
+
+  <main>
+    <!-- BGM 목록 -->
+    <section class="card" id="bgmCard">
+      <div class="card-head">
+        <h2>BGM <small>PPT 순서대로</small></h2>
+        <label class="add edit-only" for="addBgm">＋ BGM 넣기</label>
+        <input id="addBgm" type="file" accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg,.flac" multiple hidden>
+      </div>
+      <ol class="bgm-list" id="bgmList"></ol>
+      <p class="empty" id="bgmEmpty">＋ BGM 넣기로 음악 파일을 넣으세요. 컴퓨터에서는 여기로 끌어다 놓아도 돼요.</p>
+    </section>
+
+    <!-- 효과음 패드 -->
+    <section class="card" id="sfxCard">
+      <div class="card-head">
+        <h2>효과음 <small>누르면 바로 나와요</small></h2>
+        <label class="add edit-only" for="addSfx">＋ 효과음 넣기</label>
+        <input id="addSfx" type="file" accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg,.flac" multiple hidden>
+      </div>
+      <div class="pads" id="pads"></div>
+      <p class="empty" id="sfxEmpty">＋ 효과음 넣기로 박수·환호 같은 짧은 소리를 넣으세요.</p>
+      <button id="stopSfxBtn" class="text-btn" type="button">효과음만 모두 멈추기</button>
+    </section>
+
+    <!-- 설정 -->
+    <details class="card settings edit-only-block">
+      <summary>재생 설정</summary>
+      <label class="row">곡 바꿀 때·끌 때 서서히 줄이는 시간
+        <select id="fadeSec">
+          <option value="0">바로</option><option value="1">1초</option><option value="2">2초</option>
+          <option value="3">3초</option><option value="5">5초</option><option value="8">8초</option>
+        </select>
+      </label>
+      <label class="row check"><input id="duck" type="checkbox"> 효과음이 나올 때 BGM 소리를 잠깐 줄이기</label>
+      <label class="row check"><input id="autoNext" type="checkbox"> 곡이 끝나면 다음 곡 자동으로 틀기</label>
+      <p class="usage" id="usage"></p>
+      <button id="clearAll" class="text-btn danger-text" type="button">넣은 음원 모두 지우기</button>
+    </details>
+  </main>
+
+  <!-- 곡 설정 창 -->
+  <dialog id="trackDlg" class="sheet">
+    <form method="dialog" id="trackForm">
+      <h2 id="tdTitle">음원 설정</h2>
+      <label class="field">이름<input id="tdName" type="text" maxlength="40"></label>
+      <label class="field">메모 <small>(예: 슬라이드 3 · 입장할 때)</small><input id="tdMemo" type="text" maxlength="60"></label>
+      <label class="field">음량 <span id="tdVolVal"></span><input id="tdVol" type="range" min="0" max="150" step="5"></label>
+      <label class="field">시작 지점 <small>(앞부분 건너뛰기, 초)</small><input id="tdStart" type="number" min="0" step="0.5" inputmode="decimal"></label>
+      <label class="check bgm-only"><input id="tdLoop" type="checkbox"> 끝나면 처음부터 반복</label>
+      <label class="check bgm-only"><input id="tdFadeIn" type="checkbox"> 서서히 커지며 시작</label>
+      <div class="dlg-row">
+        <button id="tdPreview" class="btn" type="button">▶ 미리 듣기</button>
+        <button id="tdUp" class="btn" type="button">▲ 위로</button>
+        <button id="tdDown" class="btn" type="button">▼ 아래로</button>
+      </div>
+      <button id="tdKind" class="btn wide" type="button">효과음으로 옮기기</button>
+      <button id="tdDelete" class="btn wide danger-text" type="button">이 음원 지우기</button>
+      <button class="btn wide primary" type="submit" value="save">저장</button>
+    </form>
+  </dialog>
+
+  <dialog id="helpDlg" class="sheet">
+    <div id="helpBody"></div>
+    <form method="dialog"><button class="btn wide" type="submit">닫기</button></form>
+  </dialog>
+
+  <div id="dropCover" class="drop-cover" hidden>여기에 놓으면 음원이 들어가요</div>
+  <div id="toast" class="toast" hidden></div>
+
+  <script type="module" src="player.js?v=2"></script>
+</body>
+</html>
