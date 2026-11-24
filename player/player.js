@@ -71,7 +71,10 @@ const state = {
   master: ls.get('master', 100),
   locked: ls.get('locked', false),
   cursor: -1,                      // 마지막으로 튼 BGM 의 순서 (다음 곡 계산용)
+  talk: 'full',                    // BGM 크기: 'full' 크게 / 'bed' 잔잔하게 / 'auto' 말소리 따라(마이크)
+  micSens: ls.get('micSens', 12),  // 말소리로 볼 기준: 주변 소리보다 몇 dB 커야 하는지
 };
+let voice = false;                 // 마이크에 말소리가 들리는 중
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -87,7 +90,7 @@ const PAD_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'q', 'w', 'e
 
 /* ───────── 소리 엔진 ───────── */
 
-let ctx = null, masterGain, bgmBus, sfxBus;
+let ctx = null, masterGain, bgmBus, sfxBus, talkGain;
 function audio() {
   if (!ctx) {
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -95,6 +98,8 @@ function audio() {
     masterGain = ctx.createGain();
     bgmBus = ctx.createGain();     // 더킹은 여기서
     sfxBus = ctx.createGain();
+    talkGain = ctx.createGain();   // 크게/잔잔하게/말소리 따라
+    talkGain.connect(bgmBus);
     bgmBus.connect(masterGain);
     sfxBus.connect(masterGain);
     masterGain.connect(ctx.destination);
@@ -125,8 +130,8 @@ function makeBgmPlayer(track) {
   a.loop = !!track.loop;
   const src = audio().createMediaElementSource(a);
   const gain = ctx.createGain();
-  src.connect(gain).connect(bgmBus);
-  return { track, el: a, gain, url: a.src, fading: false };
+  src.connect(gain).connect(talkGain);
+  return { track, el: a, gain, url: a.src, fading: false, lowered: true };
 }
 
 function killPlayer(p) {
@@ -155,6 +160,14 @@ async function playBgm(track, { userFade = true } = {}) {
   const p = makeBgmPlayer(track);
   cur = p;
   state.cursor = bgms().indexOf(track);
+  // 처음 소리: 크게 / 잔잔하게. '말소리 따라' 중이면 마이크가 계속 정한다
+  if (state.talk !== 'auto') {
+    state.talk = track.startBed ? 'bed' : 'full';
+    applyTalk(Math.max(0.3, sec));
+  } else {
+    applyTalk(0.3);
+  }
+  p.lowered = !!track.startBed || !(track.lowerAfter > 0); // 저절로 잔잔해지기 예약
   const target = track.vol ?? 1;
   const fadeIn = track.fadeIn || had;
   p.gain.gain.value = fadeIn && sec > 0 ? 0 : target;
@@ -274,6 +287,142 @@ function stopEverything() {
   afterChange();
 }
 
+/* ───────── BGM 크기: 크게 / 잔잔하게 / 말소리 따라 ───────── */
+
+const bedLevel = () => (cur ? (cur.track.bed ?? 0.25) : 0.25);
+function talkTarget() {
+  if (state.talk === 'bed') return bedLevel();
+  if (state.talk === 'auto') return voice ? bedLevel() : 1;
+  return 1;
+}
+function applyTalk(sec = 1) {
+  if (!ctx) return;
+  ramp(talkGain.gain, talkTarget(), sec);
+  renderTalk();
+}
+
+async function setTalk(mode) {
+  audio();
+  if (mode === 'auto' && state.talk !== 'auto') {
+    const ok = await startMic();
+    if (!ok) { renderTalk(); return; }
+  }
+  if (mode !== 'auto' && state.talk === 'auto') stopMic();
+  state.talk = mode;
+  if (cur) cur.lowered = true; // 손으로 바꾸면 '저절로 잔잔해지기' 예약은 취소
+  applyTalk(mode === 'bed' ? 1.2 : 1.5);
+}
+
+// 마이크로 말소리 알아듣기
+// - 말소리 대역(250~3500Hz)만 보고, 주변 소리(바닥 소음·스피커에서 새는 BGM)보다 '민감도'만큼 커지면 말소리로 본다
+// - 말이 끝나고 1.3초 조용하면 다시 크게
+let mic = null;
+async function startMic() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    toast('이 브라우저에서는 마이크를 쓸 수 없어요. 🔉 잔잔하게 버튼을 써 주세요.');
+    return false;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false },
+    });
+    audio();
+    try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch { /* 무시 */ }
+    const src = ctx.createMediaStreamSource(stream);
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 250;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3500;
+    const an = ctx.createAnalyser(); an.fftSize = 1024;
+    src.connect(hp).connect(lp).connect(an); // 스피커로는 보내지 않는다 (울림 방지)
+    mic = { stream, src, an, buf: new Float32Array(an.fftSize), floor: -60, above: 0, lastVoice: 0, voiceSince: 0, settleUntil: performance.now() + 1500, db: -90 };
+    mic.timer = setInterval(micTick, 50);
+    toast('마이크로 말소리를 듣고 있어요. 리허설 때 꼭 한 번 맞춰 보세요.');
+    return true;
+  } catch (err) {
+    toast(err && err.name === 'NotAllowedError'
+      ? '마이크 사용이 막혀 있어요. 주소창 옆 설정에서 마이크를 허용해 주세요.'
+      : '마이크를 켤 수 없어요. 🔉 잔잔하게 버튼을 써 주세요.');
+    return false;
+  }
+}
+
+function stopMic() {
+  if (!mic) return;
+  clearInterval(mic.timer);
+  mic.stream.getTracks().forEach(t => t.stop());
+  try { mic.src.disconnect(); } catch { /* 무시 */ }
+  mic = null;
+  voice = false;
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { /* 무시 */ }
+}
+
+function micTick() {
+  if (!mic) return;
+  mic.an.getFloatTimeDomainData(mic.buf);
+  let sum = 0;
+  for (let i = 0; i < mic.buf.length; i++) sum += mic.buf[i] * mic.buf[i];
+  const db = 20 * Math.log10(Math.sqrt(sum / mic.buf.length) + 1e-9);
+  mic.db = db;
+  const now = performance.now();
+  // 주변 소리 기준: 내려갈 땐 빨리, 올라갈 땐 천천히 따라간다.
+  // BGM 이 다시 커진 직후(settle)에는 스피커에서 새는 BGM 을 빨리 배워서 '말소리'로 착각하지 않게 한다
+  if (db < mic.floor) mic.floor += (db - mic.floor) * 0.3;
+  else if (!voice) mic.floor += (db - mic.floor) * (now < mic.settleUntil ? 0.25 : 0.01);
+  else if (now - mic.voiceSince > 20000) mic.floor += (db - mic.floor) * 0.003; // 20초 넘게 계속이면 소음으로 보고 천천히 따라감
+  mic.floor = Math.max(-90, Math.min(-15, mic.floor));
+  const th = mic.floor + state.micSens;
+  if (db > th && now >= mic.settleUntil) {
+    if (++mic.above >= 3) { // 0.15초 이상 이어지면 말소리
+      mic.lastVoice = now;
+      if (!voice) { voice = true; mic.voiceSince = now; if (state.talk === 'auto') applyTalk(0.35); }
+    }
+  } else {
+    mic.above = 0;
+  }
+  if (voice && now - mic.lastVoice > 1300) {
+    voice = false;
+    mic.settleUntil = now + 900;
+    if (state.talk === 'auto') applyTalk(1.6);
+  }
+  // 소리 막대
+  const pct = (v) => Math.max(0, Math.min(100, ((v + 80) / 70) * 100));
+  $('micLevel').style.width = `${pct(db)}%`;
+  $('micThresh').style.left = `${pct(th)}%`;
+  $('micBox').classList.toggle('voice', voice);
+}
+
+let talkStatusAt = 0;
+function renderTalk() {
+  document.querySelectorAll('#talkSeg button').forEach(b => {
+    const on = b.dataset.talk === state.talk;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-checked', on);
+  });
+  $('micBox').hidden = state.talk !== 'auto';
+  const st = $('talkStatus');
+  st.textContent = '';
+  const pctBed = Math.round(bedLevel() * 100);
+  if (state.talk === 'auto') {
+    if (voice) st.append(el('span', 'voice', '말소리 들림'), ` → 잔잔하게 (${pctBed}%)`);
+    else st.append('조용함 → 크게 · 말하면 저절로 작아져요');
+  } else if (state.talk === 'bed') {
+    st.append(el('b', '', `잔잔하게 ${pctBed}%`), ' · 말 밑에 깔리는 중');
+  } else if (cur && !cur.lowered && cur.track.lowerAfter > 0) {
+    const left = Math.max(0, Math.ceil(cur.track.lowerAfter - (cur.el.currentTime - (cur.track.start || 0))));
+    st.append(el('b', '', '크게'), ` · ${left}초 뒤 저절로 잔잔하게`);
+  } else {
+    st.append(el('b', '', '크게'));
+  }
+}
+$('talkSeg').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-talk]');
+  if (b) setTalk(b.dataset.talk);
+});
+const micSens = $('micSens');
+micSens.value = state.micSens;
+const sensText = () => { $('micSensVal').textContent = state.micSens <= 8 ? '예민하게' : state.micSens >= 20 ? '둔하게' : '보통'; };
+sensText();
+micSens.addEventListener('input', () => { state.micSens = +micSens.value; ls.set('micSens', state.micSens); sensText(); });
+
 /* ───────── 화면: 지금 나오는 곡 ───────── */
 
 function afterChange() {
@@ -301,6 +450,8 @@ function renderNow() {
   nu.textContent = '';
   if (next) nu.append('다음 곡: ', el('b', '', `${curIdx + 2}. ${next.name}`), next.memo ? ` · ${next.memo}` : '');
   else if (list.length) nu.textContent = '다음 곡 없음 (마지막)';
+  $('nextCue').textContent = next && next.cue ? `▶ 틀 신호: ${next.cue}` : '';
+  renderTalk();
   $('nextBtn').disabled = !next;
   if (!cur) { $('seekFill').style.width = '0%'; $('tNow').textContent = '0:00'; $('tLeft').textContent = '-0:00'; }
 }
@@ -315,6 +466,14 @@ function tick() {
       const row = document.querySelector(`.bgm[data-id="${cur.track.id}"] .prog`);
       if (row) row.style.width = `${(t / d) * 100}%`;
     }
+    // 예약한 시간이 되면 저절로 잔잔하게 (MC 인사가 끝날 때쯤)
+    if (!cur.lowered && state.talk === 'full' && cur.track.lowerAfter > 0 && t - (cur.track.start || 0) >= cur.track.lowerAfter) {
+      cur.lowered = true;
+      state.talk = 'bed';
+      applyTalk(2.5);
+    }
+    const nowMs = performance.now();
+    if (nowMs - talkStatusAt > 250) { talkStatusAt = nowMs; if (state.talk === 'full' && !cur.lowered) renderTalk(); }
   }
   if (sfxPlaying.size && ctx) {
     for (const [id, it] of sfxPlaying) {
@@ -362,6 +521,9 @@ function renderBgmList() {
     info.appendChild(el('div', 'name', t.name));
     const bits = [fmt(t.duration || 0)];
     if (t.memo) bits.unshift(t.memo);
+    if (t.startBed) bits.push('잔잔하게 시작');
+    else if (t.lowerAfter > 0) bits.push(`${t.lowerAfter}초 뒤 잔잔하게`);
+    if (t.cue) bits.push(`신호: ${t.cue}`);
     if (t.loop) bits.push('반복');
     if (t.start > 0) bits.push(`${t.start}초부터`);
     if ((t.vol ?? 1) !== 1) bits.push(`음량 ${Math.round(t.vol * 100)}%`);
@@ -400,7 +562,7 @@ function renderPads() {
     b.dataset.id = t.id;
     b.appendChild(el('span', 'key', PAD_KEYS[i] ? PAD_KEYS[i].toUpperCase() : '·'));
     b.appendChild(el('span', 'pname', t.name));
-    b.appendChild(el('span', 'pmeta', [t.memo, fmt(t.duration || 0)].filter(Boolean).join(' · ')));
+    b.appendChild(el('span', 'pmeta', [t.memo, t.cue, fmt(t.duration || 0)].filter(Boolean).join(' · ')));
     const more = el('span', 'more', '⋯');
     more.setAttribute('role', 'button');
     more.setAttribute('aria-label', `${t.name} 설정`);
@@ -526,6 +688,11 @@ function openTrack(t) {
   $('tdTitle').textContent = t.kind === 'bgm' ? 'BGM 설정' : '효과음 설정';
   $('tdName').value = t.name;
   $('tdMemo').value = t.memo || '';
+  $('tdCue').value = t.cue || '';
+  $('tdStartBed').value = t.startBed ? '1' : '0';
+  $('tdLowerAfter').value = t.lowerAfter || 0;
+  $('tdBed').value = Math.round((t.bed ?? 0.25) * 100);
+  $('tdBedVal').textContent = `${$('tdBed').value}%`;
   $('tdVol').value = Math.round((t.vol ?? 1) * 100);
   $('tdVolVal').textContent = `${$('tdVol').value}%`;
   $('tdStart').value = t.start || 0;
@@ -536,6 +703,7 @@ function openTrack(t) {
   $('trackDlg').returnValue = '';
   $('trackDlg').showModal();
 }
+$('tdBed').addEventListener('input', () => { $('tdBedVal').textContent = `${$('tdBed').value}%`; });
 $('tdVol').addEventListener('input', () => { $('tdVolVal').textContent = `${$('tdVol').value}%`; if (preview) preview.el.volume = Math.min(1, $('tdVol').value / 100); });
 
 $('tdPreview').addEventListener('click', () => {
@@ -603,12 +771,18 @@ $('trackDlg').addEventListener('close', async () => {
   if (!t || $('trackDlg').returnValue !== 'save') return;
   t.name = $('tdName').value.trim() || t.name;
   t.memo = $('tdMemo').value.trim();
+  t.cue = $('tdCue').value.trim();
+  if (t.kind === 'bgm') {
+    t.startBed = $('tdStartBed').value === '1';
+    t.lowerAfter = Math.max(0, Math.round(Number($('tdLowerAfter').value) || 0));
+    t.bed = Math.max(5, Math.min(70, Number($('tdBed').value))) / 100;
+  }
   t.vol = Math.max(0, Math.min(150, Number($('tdVol').value))) / 100;
   t.start = Math.max(0, Number($('tdStart').value) || 0);
   if (t.kind === 'bgm') { t.loop = $('tdLoop').checked; t.fadeIn = $('tdFadeIn').checked; }
   await dbPut(t);
   // 지금 나오는 곡이면 바로 반영
-  if (cur && cur.track === t) { cur.el.loop = t.loop; ramp(cur.gain.gain, t.vol, 0.2); }
+  if (cur && cur.track === t) { cur.el.loop = t.loop; ramp(cur.gain.gain, t.vol, 0.2); applyTalk(0.5); }
   renderAll();
 });
 
@@ -674,6 +848,8 @@ document.addEventListener('keydown', (e) => {
   if (k === 'f') { stopBgm(); return; }
   if (k === 'escape') { stopEverything(); return; }
   if (k === 's') { stopAllSfx(); return; }
+  if (k === 'd') { setTalk(state.talk === 'bed' ? 'full' : 'bed'); return; }
+  if (k === 'm') { setTalk(state.talk === 'auto' ? 'full' : 'auto'); return; }
   const i = PAD_KEYS.indexOf(k);
   if (i >= 0) { const t = sfxs()[i]; if (t) { e.preventDefault(); playSfx(t); } }
 });
@@ -730,9 +906,25 @@ const HELP = `
   <li>남은 시간이 위에 크게 보여서 다음 곡 넘길 때를 맞추기 쉬워요.</li>
 </ul>
 
+<h3>말소리와 BGM 맞추기</h3>
+<ul>
+  <li><b>🔊 크게 / 🔉 잔잔하게</b>: MC가 말을 시작하면 🔉, 끝나면 🔊. 가장 확실한 방법이에요. (키보드 <kbd>D</kbd>)</li>
+  <li><b>저절로 잔잔해지기</b>: 곡의 ⋯ 에서 "MC 등장곡을 크게 → 10초 뒤 잔잔하게"처럼 정해 두면, 인사가 끝날 때쯤 저절로 줄어요. 남은 초가 위에 보여요.</li>
+  <li><b>잔잔하게 시작</b>: 처음부터 말 밑에 깔 BGM은 ⋯ 에서 "잔잔하게 시작"으로 정하세요. 잔잔할 때 크기(기본 25%)도 곡마다 정할 수 있어요.</li>
+  <li><b>🎤 말소리 따라</b>: 이 기기 마이크로 말소리를 듣고, 말하는 동안 BGM을 줄였다가 말이 끝나면 다시 키워요. (키보드 <kbd>M</kbd>)
+    <ul>
+      <li>기기를 <b>MC 쪽(무대 가까이)</b>에, <b>스피커와는 멀리</b> 두세요. 스피커 소리를 말소리로 착각할 수 있어요.</li>
+      <li>소리 막대의 노란 선이 기준이에요. 말할 때만 막대가 선을 넘게 <b>민감도</b>를 맞추세요.</li>
+      <li>리허설에서 꼭 맞춰 보고, 흔들리면 🔊/🔉 버튼으로 바꾸세요.</li>
+      <li>아이폰은 마이크를 켜면 소리가 나오는 곳이나 크기가 바뀔 수 있어요. 스피커를 연결한 상태로 미리 확인하세요.</li>
+    </ul>
+  </li>
+  <li><b>틀 신호</b>: 곡마다 "MC가 '영상 보시죠' 하면"처럼 적어 두면, 위 화면에 <b>다음 곡의 신호</b>가 노란 글씨로 보여요. 대사–화면–음악 타이밍을 맞추기 쉬워요.</li>
+</ul>
+
 <h3>키보드 (컴퓨터)</h3>
 <ul>
-  <li><kbd>스페이스</kbd> 다음 곡 · <kbd>K</kbd> 일시정지/계속 · <kbd>F</kbd> 서서히 끄기 · <kbd>Esc</kbd> 모두 끄기 · <kbd>S</kbd> 효과음만 멈추기</li>
+  <li><kbd>스페이스</kbd> 다음 곡 · <kbd>K</kbd> 일시정지/계속 · <kbd>F</kbd> 서서히 끄기 · <kbd>Esc</kbd> 모두 끄기 · <kbd>S</kbd> 효과음만 멈추기 · <kbd>D</kbd> 크게/잔잔하게 · <kbd>M</kbd> 말소리 따라</li>
   <li>효과음: 칸 왼쪽 위 글자 <kbd>1</kbd>~<kbd>0</kbd>, <kbd>Q</kbd>~<kbd>P</kbd></li>
 </ul>
 
@@ -784,4 +976,4 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 
-window.__player = { state, playBgm, playSfx, playNext, stopEverything, get cur() { return cur; }, get sfx() { return sfxPlaying; }, get bus() { return bgmBus; } };
+window.__player = { get tgain() { return talkGain; }, state, playBgm, playSfx, playNext, stopEverything, get cur() { return cur; }, get sfx() { return sfxPlaying; }, get bus() { return bgmBus; } };

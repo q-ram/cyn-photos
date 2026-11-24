@@ -165,3 +165,27 @@ kbd { border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5p
   position: fixed; left: 50%; bottom: calc(20px + var(--safe-b)); transform: translateX(-50%); z-index: 90;
   background: rgba(10,12,16,.92); color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 15px; max-width: calc(100% - 32px); text-align: center;
 }
+
+/* BGM 크기 (말소리와 맞추기) */
+.talk { margin-top: 8px; }
+.seg { display: grid; grid-template-columns: 1fr 1fr 1.25fr; gap: 4px; background: var(--card2); border: 1px solid var(--line); border-radius: 12px; padding: 4px; }
+.seg button { min-height: 44px; border: 0; border-radius: 9px; background: transparent; font-weight: 800; font-size: 14px; cursor: pointer; color: var(--sub); white-space: nowrap; }
+.seg button.on { background: var(--text); color: var(--bg); }
+.seg button[data-talk="auto"].on { background: var(--play); color: #04210f; }
+.talk-status { font-size: 13px; color: var(--sub); margin-top: 4px; min-height: 1.2em; }
+.talk-status b { color: var(--text); }
+.talk-status .voice { color: var(--play); font-weight: 800; }
+.mic { margin-top: 4px; }
+.meter { position: relative; height: 10px; border-radius: 99px; background: var(--card2); overflow: hidden; }
+#micLevel { height: 100%; width: 0; background: var(--sub); transition: width .05s; }
+.mic.voice #micLevel { background: var(--play); }
+#micThresh { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--duck); left: 50%; }
+.sens { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--sub); margin-top: 2px; }
+.sens input { flex: 1; accent-color: var(--duck); height: 28px; }
+.sens span { width: 52px; text-align: right; }
+.next-cue { font-size: 14px; color: var(--duck); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.next-cue:empty { display: none; }
+.talk-set { margin-top: 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card2); }
+.talk-set-title { font-weight: 800; font-size: 15px; }
+.talk-set select { min-height: 46px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); padding: 0 10px; font-size: 16px; font-weight: 400; }
+.talk-set input[type=number] { background: var(--card) !important; }

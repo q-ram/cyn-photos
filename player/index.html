@@ -13,7 +13,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="청년회의 밤 음향">
-  <link rel="stylesheet" href="player.css?v=2">
+  <link rel="stylesheet" href="player.css?v=3">
 </head>
 <body>
   <header class="top">
@@ -34,10 +34,27 @@
     <div class="controls">
       <button id="pauseBtn" class="ctl" type="button" disabled><i>⏸</i><span>일시정지</span></button>
       <button id="nextBtn" class="ctl primary" type="button"><i>⏭</i><span>다음 곡</span></button>
-      <button id="fadeBtn" class="ctl" type="button" disabled><i>🔉</i><span>서서히 끄기</span></button>
+      <button id="fadeBtn" class="ctl" type="button" disabled><i>🔇</i><span>서서히 끄기</span></button>
       <button id="stopAllBtn" class="ctl danger" type="button"><i>⏹</i><span>모두 끄기</span></button>
     </div>
+    <!-- BGM 크기: 크게 / 잔잔하게 / 말소리 따라 -->
+    <div class="talk">
+      <div class="seg" id="talkSeg" role="radiogroup" aria-label="BGM 크기">
+        <button type="button" data-talk="full" role="radio">🔊 크게</button>
+        <button type="button" data-talk="bed" role="radio">🔉 잔잔하게</button>
+        <button type="button" data-talk="auto" role="radio">🎤 말소리 따라</button>
+      </div>
+      <div class="talk-status" id="talkStatus"></div>
+      <div class="mic" id="micBox" hidden>
+        <div class="meter" title="마이크 소리 크기"><div id="micLevel"></div><div id="micThresh"></div></div>
+        <label class="sens">민감도
+          <input id="micSens" type="range" min="4" max="30" step="1">
+          <span id="micSensVal"></span>
+        </label>
+      </div>
+    </div>
     <div class="next-up" id="nextUp"></div>
+    <div class="next-cue" id="nextCue"></div>
     <label class="master">전체 음량
       <input id="master" type="range" min="0" max="100" step="1">
       <span id="masterVal">100%</span>
@@ -89,9 +106,18 @@
     <form method="dialog" id="trackForm">
       <h2 id="tdTitle">음원 설정</h2>
       <label class="field">이름<input id="tdName" type="text" maxlength="40"></label>
-      <label class="field">메모 <small>(예: 슬라이드 3 · 입장할 때)</small><input id="tdMemo" type="text" maxlength="60"></label>
+      <label class="field">메모 <small>(예: 슬라이드 3)</small><input id="tdMemo" type="text" maxlength="60"></label>
+      <label class="field">틀 신호 <small>(이 대사·장면이 나오면 틀기)</small><input id="tdCue" type="text" maxlength="80" placeholder="예: MC가 &quot;영상 보시죠&quot; 하면"></label>
       <label class="field">음량 <span id="tdVolVal"></span><input id="tdVol" type="range" min="0" max="150" step="5"></label>
       <label class="field">시작 지점 <small>(앞부분 건너뛰기, 초)</small><input id="tdStart" type="number" min="0" step="0.5" inputmode="decimal"></label>
+      <div class="bgm-only talk-set">
+        <div class="talk-set-title">말소리와 맞추기</div>
+        <label class="field">처음 소리
+          <select id="tdStartBed"><option value="0">크게 시작</option><option value="1">잔잔하게 시작 (말 밑에 깔기)</option></select>
+        </label>
+        <label class="field">저절로 잔잔해지기 <small>(MC 인사가 끝날 때쯤, 초 · 0이면 안 함)</small><input id="tdLowerAfter" type="number" min="0" step="1" inputmode="numeric"></label>
+        <label class="field">잔잔할 때 크기 <span id="tdBedVal"></span><input id="tdBed" type="range" min="5" max="70" step="5"></label>
+      </div>
       <label class="check bgm-only"><input id="tdLoop" type="checkbox"> 끝나면 처음부터 반복</label>
       <label class="check bgm-only"><input id="tdFadeIn" type="checkbox"> 서서히 커지며 시작</label>
       <div class="dlg-row">
@@ -113,6 +139,6 @@
   <div id="dropCover" class="drop-cover" hidden>여기에 놓으면 음원이 들어가요</div>
   <div id="toast" class="toast" hidden></div>
 
-  <script type="module" src="player.js?v=2"></script>
+  <script type="module" src="player.js?v=3"></script>
 </body>
 </html>
